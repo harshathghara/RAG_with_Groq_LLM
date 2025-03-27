@@ -18,7 +18,7 @@ index = faiss.read_index(index_path)
 metadata = np.load(metadata_path, allow_pickle=True)
 
 # Load Groq API key
-GROQ_API_KEY = "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"
+GROQ_API_KEY = "Your_API_KEY"
 client = groq.Groq(api_key=GROQ_API_KEY)  # No need for base_url
 
 
