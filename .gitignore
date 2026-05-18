@@ -1,24 +1,24 @@
-# Ignore Python cache files
+# Python cache
 __pycache__/
 *.pyc
 *.pyo
 
-# Ignore environment files
+# Virtual environment
+venv/
+
+# Environment variables
 .env
 *.env
 
-# Ignore dataset and processed text files
+# Data and processed files
 data/
 processed_text/
 
-# Ignore embeddings and FAISS index files
+# Embeddings and FAISS index
 embeddings/
 *.npy
 *.faiss
 
-# Ignore VS Code settings
+# Editor settings
 .vscode/
-
-rag_project/Lib/site-packages/torch/lib/torch_cpu.dll
-rag_project/Lib/site-packages/torch/lib/dnnl.lib
 
