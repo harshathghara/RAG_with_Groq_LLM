@@ -2,7 +2,10 @@ import faiss
 import numpy as np
 import os
 import groq
+from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
+
+load_dotenv()
 
 # Load the embedding model
 model = SentenceTransformer("all-MiniLM-L6-v2")
@@ -17,9 +20,10 @@ metadata_path = "embeddings/faiss_index_metadata_for_Test.npy"
 index = faiss.read_index(index_path)
 metadata = np.load(metadata_path, allow_pickle=True)
 
-# Load Groq API key
-GROQ_API_KEY = "Your_API_KEY"
-client = groq.Groq(api_key=GROQ_API_KEY)  # No need for base_url
+# Load Groq credentials
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "gemma2-9b-it")
+client = groq.Groq(api_key=GROQ_API_KEY)
 
 
 def search_query(query, top_k=2):
@@ -35,7 +39,7 @@ def ask_groq(query, context):
     prompt = f"Use the following context to answer the question.\n\nContext:\n{context}\n\nQuestion: {query}\n\nAnswer:"
     
     response = client.chat.completions.create(
-        model="gemma2-9b-it",
+        model=GROQ_MODEL,
         messages=[
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": prompt}
