@@ -22,9 +22,12 @@ def generate_embeddings(text_file, index_folder):
     # Generate embeddings
     embeddings = model.encode(chunks, convert_to_numpy=True)
 
-    # Create FAISS index
+    # Normalize for cosine similarity (dot product on unit vectors = cosine similarity)
+    faiss.normalize_L2(embeddings)
+
+    # Create FAISS index using Inner Product (cosine similarity)
     dimension = embeddings.shape[1]
-    index = faiss.IndexFlatL2(dimension)
+    index = faiss.IndexFlatIP(dimension)
     index.add(embeddings)
 
     # Save FAISS index

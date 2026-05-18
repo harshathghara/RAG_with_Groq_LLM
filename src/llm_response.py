@@ -30,6 +30,7 @@ client = groq.Groq(api_key=GROQ_API_KEY)
 def search_query(query, top_k=2):
     """Search FAISS for the most relevant text chunks."""
     query_embedding = model.encode([query], convert_to_numpy=True)
+    faiss.normalize_L2(query_embedding)
     distances, indices = index.search(query_embedding, top_k)
 
     results = [metadata[i] for i in indices[0]]

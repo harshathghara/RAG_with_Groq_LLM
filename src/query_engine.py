@@ -23,6 +23,7 @@ metadata = np.load(metadata_path, allow_pickle=True)
 def search_query(query, top_k=2):
     """Search FAISS for the most relevant text chunks."""
     query_embedding = model.encode([query], convert_to_numpy=True)
+    faiss.normalize_L2(query_embedding)
     distances, indices = index.search(query_embedding, top_k)
 
     results = [{"chunk": metadata[i], "score": distances[0][j]} for j, i in enumerate(indices[0])]
