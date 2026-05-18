@@ -1,10 +1,14 @@
 import os
 import numpy as np
 import faiss
+from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 
+load_dotenv()
+
 # Load pre-trained model for embeddings
-model = SentenceTransformer("all-MiniLM-L6-v2")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
+model = SentenceTransformer(EMBEDDING_MODEL)
 
 def generate_embeddings(text_file, index_folder):
     """Generate embeddings for a given text file and store in FAISS."""
