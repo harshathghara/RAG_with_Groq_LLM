@@ -8,7 +8,7 @@ from sentence_transformers import SentenceTransformer
 load_dotenv()
 
 # Load the embedding model
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 model = SentenceTransformer(EMBEDDING_MODEL)
 
 # Load FAISS index & metadata
@@ -24,6 +24,7 @@ metadata = np.load(metadata_path, allow_pickle=True)
 # Load Groq credentials
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "gemma2-9b-it")
+MAX_TOKENS = int(os.getenv("MAX_TOKENS", 1024))
 client = groq.Groq(api_key=GROQ_API_KEY)
 
 
@@ -46,7 +47,7 @@ def ask_groq(query, context):
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": prompt}
         ],
-        max_tokens=150
+        max_tokens=MAX_TOKENS
     )
 
     return response.choices[0].message.content  # Correct output format
