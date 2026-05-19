@@ -8,16 +8,28 @@ load_dotenv()
 
 # Load pre-trained model for embeddings
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", 500))
+CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", 100))
+
 model = SentenceTransformer(EMBEDDING_MODEL)
+
+def chunk_fixed_size(text, chunk_size=500, overlap=100):
+    """Split text into fixed-size character chunks with overlap."""
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = start + chunk_size
+        chunks.append(text[start:end].strip())
+        start += chunk_size - overlap
+    return [c for c in chunks if c]  # drop empty chunks
+
 
 def generate_embeddings(text_file, index_folder):
     """Generate embeddings for a given text file and store in FAISS."""
     with open(text_file, "r", encoding="utf-8") as f:
         text = f.read()
 
-    # Split text into chunks (every 2 sentences)
-    sentences = text.split("\n")
-    chunks = [" ".join(sentences[i:i+2]) for i in range(0, len(sentences), 2)]
+    chunks = chunk_fixed_size(text, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP)
 
     # Generate embeddings
     embeddings = model.encode(chunks, convert_to_numpy=True)
