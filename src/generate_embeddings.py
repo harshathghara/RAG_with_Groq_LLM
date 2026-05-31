@@ -42,22 +42,23 @@ def generate_embeddings(text_file, index_folder):
     index = faiss.IndexFlatIP(dimension)
     index.add(embeddings)
 
-    # Save FAISS index
+    stem = os.path.splitext(os.path.basename(text_file))[0]
+
     os.makedirs(index_folder, exist_ok=True)
-    #faiss.write_index(index, os.path.join(index_folder, "faiss_index"))
-    faiss.write_index(index, os.path.join(index_folder, "faiss_index_for_Test"))
+    index_path    = os.path.join(index_folder, f"faiss_index_{stem}")
+    metadata_path = os.path.join(index_folder, f"faiss_index_metadata_{stem}.npy")
 
+    faiss.write_index(index, index_path)
+    np.save(metadata_path, np.array(chunks))
 
-
-    # Save metadata (to map embeddings to original text chunks)
-    #np.save(os.path.join(index_folder, "faiss_index_metadata.npy"), np.array(chunks))
-    np.save(os.path.join(index_folder, "faiss_index_metadata_for_Test.npy"), np.array(chunks))
-
-
-    print("Embeddings generated and FAISS index stored successfully!")
+    print(f"FAISS index saved:  {index_path}")
+    print(f"Metadata saved:     {metadata_path}")
+    return index_path, metadata_path
 
 if __name__ == "__main__":
     text_file = "processed_text/Test.txt"
     index_folder = "embeddings/"
 
-    generate_embeddings(text_file, index_folder)
+    index_path, metadata_path = generate_embeddings(text_file, index_folder)
+    print(f"Index:    {index_path}")
+    print(f"Metadata: {metadata_path}")
