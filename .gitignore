@@ -22,3 +22,6 @@ embeddings/
 # Editor settings
 .vscode/
 
+# Uploaded PDFs (web UI)
+uploads/
+
