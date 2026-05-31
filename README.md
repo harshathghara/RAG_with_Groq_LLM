@@ -55,7 +55,14 @@ RAG_with_Groq_LLM/
 │   ├── llm_response.py           # ask_groq() — Groq LLM call
 │   └── evaluate.py               # Hit-rate benchmark (FAISS-only vs reranked)
 │
-├── pipeline.py                   # ← Single entry point for the full pipeline
+├── templates/
+│   └── index.html                # Web UI (sidebar + chat, embedded CSS & JS)
+│
+├── uploads/                      # Uploaded PDFs (auto-created, gitignored)
+│
+├── app.py                        # FastAPI web server (upload, query, delete routes)
+├── pipeline.py                   # CLI entry point for the full pipeline
+├── ENHANCEMENTS.md               # Tracked list of upcoming features
 ├── .env                          # Environment variables (not committed)
 ├── .env.example                  # Template for .env
 ├── requirements.txt
@@ -64,9 +71,51 @@ RAG_with_Groq_LLM/
 
 ---
 
-## Quickstart — Run the Full Pipeline
+## Web UI
 
-The recommended way to use this project is through `pipeline.py`. It chains every step automatically.
+The project ships with a full browser-based interface powered by **FastAPI**.
+
+### Start the server
+
+```bash
+python app.py
+```
+
+Then open [http://localhost:5000](http://localhost:5000) in your browser.
+
+### Features
+
+- **Drag-and-drop PDF upload** — drop any PDF onto the sidebar or click to browse
+- **Live indexing status** — each document shows a live badge (Queued / Indexing / Ready / Error) that updates automatically while the PDF is being processed
+- **Multi-PDF support** — upload as many PDFs as you want and switch between them instantly; each keeps its own index and chat context
+- **Streaming answers** — Groq responses stream token-by-token as they arrive, just like ChatGPT
+- **Retrieved context** — each answer has a collapsible "Retrieved context" section showing the exact chunks the LLM used
+- **Delete documents** — trash icon on each document removes it from the sidebar and deletes all associated files from disk (uploaded PDF, extracted text, FAISS index, metadata); if a document is still indexing when deleted, the background process is cancelled and any partial files are cleaned up automatically
+
+### Routes
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/` | Serves the UI |
+| `POST` | `/upload` | Upload a PDF; starts background indexing |
+| `GET` | `/status/{doc_id}` | Returns current processing status |
+| `GET` | `/documents` | Lists all known documents |
+| `POST` | `/query` | Streams a RAG answer via Server-Sent Events |
+| `DELETE` | `/documents/{doc_id}` | Removes document and all its files |
+
+### Production deployment
+
+Replace `python app.py` with:
+
+```bash
+uvicorn app:app --host 0.0.0.0 --port $PORT --workers 1
+```
+
+---
+
+## Quickstart — CLI Pipeline
+
+If you prefer the terminal over the web UI, use `pipeline.py`. It chains every step automatically.
 
 **1. Set your PDF path** — open `pipeline.py` and change the one line at the top:
 
