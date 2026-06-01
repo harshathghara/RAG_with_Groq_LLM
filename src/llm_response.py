@@ -34,8 +34,8 @@ def ask_groq(query: str, context: str) -> str:
 
 def suggest_followups(query: str, answer: str, context: str) -> list[str]:
     """
-    Ask Groq to generate 2-3 short follow-up questions based on the Q&A exchange.
-    Returns a list of question strings, or [] on any failure.
+    Ask Groq to generate exactly 4 short follow-up questions based on the Q&A exchange.
+    Returns a list of 4 question strings, or [] on any failure.
     """
     prompt = (
         "Given the question, answer, and context below, suggest exactly 4 short "

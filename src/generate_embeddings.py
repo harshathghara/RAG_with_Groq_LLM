@@ -13,7 +13,16 @@ EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 CHUNK_SIZE      = int(os.getenv("CHUNK_SIZE", 500))
 CHUNK_OVERLAP   = int(os.getenv("CHUNK_OVERLAP", 100))
 
-model = SentenceTransformer(EMBEDDING_MODEL)
+# Lazily initialised on first call to generate_embeddings() so that simply
+# importing this module does not trigger a heavyweight model load at startup.
+_model: SentenceTransformer | None = None
+
+
+def _get_model() -> SentenceTransformer:
+    global _model
+    if _model is None:
+        _model = SentenceTransformer(EMBEDDING_MODEL)
+    return _model
 
 # Marker format written by extract_text.py
 _PAGE_MARKER = re.compile(r"<<<PAGE:(\d+)>>>")
@@ -89,7 +98,7 @@ def generate_embeddings(text_file: str, index_folder: str):
         for i, (text, pos) in enumerate(chunk_tuples)
     ]
 
-    embeddings = model.encode(chunks, convert_to_numpy=True)
+    embeddings = _get_model().encode(chunks, convert_to_numpy=True)
     faiss.normalize_L2(embeddings)
 
     dimension = embeddings.shape[1]
@@ -120,8 +129,4 @@ def generate_embeddings(text_file: str, index_folder: str):
 if __name__ == "__main__":
     text_file = "processed_text/Test.txt"
     index_folder = "embeddings/"
-
-    index_path, metadata_path, bm25_path = generate_embeddings(text_file, index_folder)
-    print(f"Index:    {index_path}")
-    print(f"Metadata: {metadata_path}")
-    print(f"BM25:     {bm25_path}")
+    generate_embeddings(text_file, index_folder)

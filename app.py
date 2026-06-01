@@ -6,7 +6,9 @@ import asyncio
 import threading
 from typing import AsyncGenerator
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
+import fitz  # PyMuPDF — used for page count on upload
+import groq as groq_module
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.requests import Request
@@ -17,6 +19,11 @@ sys.path.insert(0, os.path.dirname(__file__))
 from src import extract_text_from_pdf, generate_embeddings, Retriever, suggest_followups
 
 load_dotenv()
+
+# Read once at startup — never change at runtime
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_MODEL   = os.getenv("GROQ_MODEL", "gemma2-9b-it")
+MAX_TOKENS   = int(os.getenv("MAX_TOKENS", 1024))
 
 app       = FastAPI(title="RAG PDF Chat")
 templates = Jinja2Templates(directory="templates")
@@ -111,11 +118,10 @@ async def upload(pdf: UploadFile = File(...)):
     with open(pdf_path, "wb") as f:
         f.write(contents)
 
-    # Get page count without blocking (fitz is already a dependency)
+    # Get page count (fitz already imported at module level)
     page_count: int | None = None
     try:
-        import fitz as _fitz
-        _doc = _fitz.open(pdf_path)
+        _doc = fitz.open(pdf_path)
         page_count = _doc.page_count
         _doc.close()
     except Exception:
@@ -214,14 +220,9 @@ async def query(body: QueryRequest):
             if "retriever" not in doc:
                 doc["retriever"] = Retriever(doc["index_path"], doc["metadata_path"], doc.get("bm25_path"))
 
-    retriever    = doc["retriever"]
-    groq_api_key = os.getenv("GROQ_API_KEY")
-    groq_model   = os.getenv("GROQ_MODEL", "gemma2-9b-it")
-    max_tokens   = int(os.getenv("MAX_TOKENS", 1024))
+    retriever = doc["retriever"]
 
     async def event_generator() -> AsyncGenerator[str, None]:
-        import groq as groq_module
-
         # Retrieval is sync + CPU-bound — run in thread pool
         # Returns list[dict] with keys: text, page, chunk_idx, score
         chunk_metas = await asyncio.to_thread(retriever.search, question)
@@ -231,19 +232,19 @@ async def query(body: QueryRequest):
 
         # Groq SDK is synchronous; pipe tokens to the async generator via a Queue.
         # The groq_worker thread puts tokens into the queue; we await them here.
-        loop: asyncio.AbstractEventLoop = asyncio.get_event_loop()
+        loop: asyncio.AbstractEventLoop = asyncio.get_running_loop()
         q: asyncio.Queue = asyncio.Queue()
 
         def groq_worker() -> None:
             try:
-                client = groq_module.Groq(api_key=groq_api_key)
+                client = groq_module.Groq(api_key=GROQ_API_KEY)
                 stream = client.chat.completions.create(
-                    model=groq_model,
+                    model=GROQ_MODEL,
                     messages=[
                         {"role": "system", "content": "You are a helpful assistant. Answer using only the provided context. Be concise and clear."},
                         {"role": "user",   "content": f"Context:\n{context}\n\nQuestion: {question}\n\nAnswer:"},
                     ],
-                    max_tokens=max_tokens,
+                    max_tokens=MAX_TOKENS,
                     stream=True,
                 )
                 for chunk in stream:

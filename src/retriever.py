@@ -1,5 +1,6 @@
 import os
 import pickle
+from collections import defaultdict, deque
 import faiss
 import numpy as np
 from dotenv import load_dotenv
@@ -114,13 +115,20 @@ class Retriever:
                 raw_candidates.append({"text": str(item), "page": None, "chunk_idx": int(i)})
 
         candidate_texts = [c["text"] for c in raw_candidates]
-        text_to_meta    = {c["text"]: c for c in raw_candidates}
+
+        # Build a deque per text so that duplicate chunks (possible with large
+        # overlaps) each get their own unique metadata entry instead of the
+        # second silently overwriting the first.
+        meta_by_text: dict[str, deque] = defaultdict(deque)
+        for c in raw_candidates:
+            meta_by_text[c["text"]].append(c)
 
         # ── CrossEncoder reranking ────────────────────────────────────────────
         reranked = rerank(query, candidate_texts)   # [(text, score), ...]
 
         results: list[dict] = []
         for text, score in reranked:
-            meta = text_to_meta.get(text, {"text": text, "page": None, "chunk_idx": None})
+            q = meta_by_text.get(text)
+            meta = q.popleft() if q else {"text": text, "page": None, "chunk_idx": None}
             results.append({**meta, "score": score})
         return results

@@ -23,6 +23,8 @@ if __name__ == "__main__":
 
         chunks = retriever.search(query)
         print("\nTop Results:")
-        for chunk in chunks:
-            print(f"  - {chunk}")
+        for i, chunk in enumerate(chunks, 1):
+            page  = f"p.{chunk['page']} | " if chunk.get("page") else ""
+            score = f"{100 / (1 + __import__('math').exp(-chunk['score'])):.1f}% | " if chunk.get("score") is not None else ""
+            print(f"  [{i}] {page}{score}{chunk['text'][:120].strip()}")
         print("\n" + "-" * 50)
