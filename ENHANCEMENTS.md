@@ -9,7 +9,7 @@ A tracked list of planned features and improvements for the RAG PDF Chat project
 - [ ] **Conversation memory** — Pass the last N exchanges to Groq so it can answer follow-up questions like "tell me more about that" or "what did you mean by X".
 - [ ] **Smarter chunking** — Upgrade from fixed character count to semantic chunking (split on paragraph/section boundaries) or sentence-window chunking for better context preservation.
 - [ ] **Parent-document retrieval** — Store small chunks for search but pass larger surrounding paragraphs to the LLM. Gets more relevant context without hurting retrieval precision.
-- [ ] **Hybrid search (BM25 + vector)** — Combine keyword search (BM25) with semantic search and merge results via Reciprocal Rank Fusion. Catches exact-match queries that semantic search misses.
+- [x] **Hybrid search (BM25 + vector)** — Combine keyword search (BM25) with semantic search and merge results via Reciprocal Rank Fusion. Catches exact-match queries that semantic search misses.
 - [ ] **Query rewriting** — Before searching, send the user's question to Groq to rewrite it into a cleaner retrieval query. Improves results for vague or conversational questions.
 - [ ] **Source citations** — Return the page number and chunk position alongside each answer so the user knows exactly where the information came from.
 

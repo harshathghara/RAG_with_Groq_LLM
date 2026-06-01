@@ -30,11 +30,11 @@ def run_pipeline(pdf_path: str) -> None:
 
     # ── Step 2: Embed ─────────────────────────────────────────────────────────
     print("\n[2/3] Generating embeddings and building FAISS index...")
-    index_path, metadata_path = generate_embeddings(text_file, INDEX_OUTPUT_DIR)
+    index_path, metadata_path, bm25_path = generate_embeddings(text_file, INDEX_OUTPUT_DIR)
 
     # ── Step 3: Query loop ────────────────────────────────────────────────────
     print("\n[3/3] Pipeline ready — starting interactive Q&A.\n")
-    retriever = Retriever(index_path, metadata_path)
+    retriever = Retriever(index_path, metadata_path, bm25_path)
 
     print("Type your question and press Enter.  Type 'exit' to quit.\n")
     print("-" * 60)

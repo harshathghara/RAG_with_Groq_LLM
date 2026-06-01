@@ -57,6 +57,7 @@ def _process_pdf(doc_id: str, pdf_path: str, cancel: threading.Event) -> None:
     text_file  = None
     index_path = None
     meta_path  = None
+    bm25_path  = None
 
     try:
         text_file = extract_text_from_pdf(pdf_path, TEXT_DIR)
@@ -65,10 +66,10 @@ def _process_pdf(doc_id: str, pdf_path: str, cancel: threading.Event) -> None:
             _remove_if_exists(text_file)
             return
 
-        index_path, meta_path = generate_embeddings(text_file, INDEX_DIR)
+        index_path, meta_path, bm25_path = generate_embeddings(text_file, INDEX_DIR)
 
         if cancel.is_set():
-            _remove_if_exists(text_file, index_path, meta_path)
+            _remove_if_exists(text_file, index_path, meta_path, bm25_path)
             return
 
         with docs_lock:
@@ -79,10 +80,11 @@ def _process_pdf(doc_id: str, pdf_path: str, cancel: threading.Event) -> None:
                     text_file=text_file,
                     index_path=index_path,
                     metadata_path=meta_path,
+                    bm25_path=bm25_path,
                 )
             else:
                 # Cancelled right at the finish line — clean up
-                _remove_if_exists(text_file, index_path, meta_path)
+                _remove_if_exists(text_file, index_path, meta_path, bm25_path)
 
     except Exception as exc:
         with docs_lock:
@@ -168,6 +170,7 @@ async def delete_document(doc_id: str):
         doc.get("text_file"),
         doc.get("index_path"),
         doc.get("metadata_path"),
+        doc.get("bm25_path"),
     )
 
     return {"deleted": doc_id}
@@ -197,7 +200,7 @@ async def query(body: QueryRequest):
     if "retriever" not in doc:
         with docs_lock:
             if "retriever" not in doc:
-                doc["retriever"] = Retriever(doc["index_path"], doc["metadata_path"])
+                doc["retriever"] = Retriever(doc["index_path"], doc["metadata_path"], doc.get("bm25_path"))
 
     retriever    = doc["retriever"]
     groq_api_key = os.getenv("GROQ_API_KEY")

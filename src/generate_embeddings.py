@@ -1,8 +1,10 @@
 import os
+import pickle
 import numpy as np
 import faiss
 from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
+from rank_bm25 import BM25Okapi
 
 load_dotenv()
 
@@ -51,14 +53,23 @@ def generate_embeddings(text_file, index_folder):
     faiss.write_index(index, index_path)
     np.save(metadata_path, np.array(chunks))
 
+    # Build BM25 index on lowercased token lists (one list per chunk)
+    tokenized = [chunk.lower().split() for chunk in chunks]
+    bm25      = BM25Okapi(tokenized)
+    bm25_path = os.path.join(index_folder, f"bm25_index_{stem}.pkl")
+    with open(bm25_path, "wb") as f:
+        pickle.dump(bm25, f)
+
     print(f"FAISS index saved:  {index_path}")
     print(f"Metadata saved:     {metadata_path}")
-    return index_path, metadata_path
+    print(f"BM25 index saved:   {bm25_path}")
+    return index_path, metadata_path, bm25_path
 
 if __name__ == "__main__":
     text_file = "processed_text/Test.txt"
     index_folder = "embeddings/"
 
-    index_path, metadata_path = generate_embeddings(text_file, index_folder)
+    index_path, metadata_path, bm25_path = generate_embeddings(text_file, index_folder)
     print(f"Index:    {index_path}")
     print(f"Metadata: {metadata_path}")
+    print(f"BM25:     {bm25_path}")

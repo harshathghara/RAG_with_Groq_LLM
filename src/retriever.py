@@ -1,4 +1,5 @@
 import os
+import pickle
 import faiss
 import numpy as np
 from dotenv import load_dotenv
@@ -9,22 +10,41 @@ load_dotenv()
 
 EMBEDDING_MODEL  = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 RETRIEVAL_TOP_K  = int(os.getenv("RETRIEVAL_TOP_K", 10))
+RRF_K            = int(os.getenv("RRF_K", 60))          # RRF constant (higher = smoother merging)
+
+
+def _rrf_merge(ranked_lists: list[list[int]], k: int = 60) -> list[int]:
+    """
+    Reciprocal Rank Fusion over multiple ranked lists of chunk indices.
+
+    Each list is a sequence of chunk indices ordered from most to least relevant.
+    Returns a deduplicated list of indices sorted by descending RRF score.
+    """
+    scores: dict[int, float] = {}
+    for ranked in ranked_lists:
+        for rank, idx in enumerate(ranked):
+            scores[idx] = scores.get(idx, 0.0) + 1.0 / (k + rank + 1)
+    return sorted(scores, key=lambda i: scores[i], reverse=True)
 
 
 class Retriever:
     """
-    Wraps a FAISS index and handles the full retrieve-then-rerank flow.
+    Hybrid retriever: combines a FAISS dense index (vector search) with
+    BM25 (keyword search) and merges the two ranked lists via Reciprocal
+    Rank Fusion (RRF) before reranking the final candidates.
 
-    The embedding model, index, and metadata are loaded lazily on the
-    first call to .search() so that importing the class has zero I/O cost.
+    All resources are loaded lazily on the first call to .search() to
+    avoid I/O cost at import time.
     """
 
-    def __init__(self, index_path: str, metadata_path: str):
+    def __init__(self, index_path: str, metadata_path: str, bm25_path: str | None = None):
         self._index_path    = index_path
         self._metadata_path = metadata_path
+        self._bm25_path     = bm25_path
         self._model         = None
         self._index         = None
         self._metadata      = None
+        self._bm25          = None
 
     def _load(self) -> None:
         if self._model is None:
@@ -46,17 +66,40 @@ class Retriever:
                 )
             self._metadata = np.load(self._metadata_path, allow_pickle=True)
 
+        if self._bm25 is None and self._bm25_path and os.path.exists(self._bm25_path):
+            with open(self._bm25_path, "rb") as f:
+                self._bm25 = pickle.load(f)
+
     def search(self, query: str, top_k: int = RETRIEVAL_TOP_K) -> list[str]:
         """
-        Retrieve top_k candidate chunks from FAISS, then rerank them.
+        Hybrid search: FAISS vector search + BM25 keyword search, merged
+        via Reciprocal Rank Fusion, then reranked with CrossEncoder.
 
         Returns a list of text chunks ordered by relevance (best first).
         """
         self._load()
 
+        # ── Dense (vector) retrieval ──────────────────────────────────────────
         query_embedding = self._model.encode([query], convert_to_numpy=True)
         faiss.normalize_L2(query_embedding)
-        _, indices = self._index.search(query_embedding, top_k)
+        _, faiss_indices = self._index.search(query_embedding, top_k)
+        dense_ranked = [int(i) for i in faiss_indices[0] if i >= 0]
 
-        candidates = [self._metadata[i] for i in indices[0]]
+        # ── Sparse (BM25) retrieval ───────────────────────────────────────────
+        if self._bm25 is not None:
+            tokenized_query = query.lower().split()
+            bm25_scores     = self._bm25.get_scores(tokenized_query)
+            sparse_ranked   = list(np.argsort(bm25_scores)[::-1][:top_k])
+        else:
+            sparse_ranked = []
+
+        # ── Merge via RRF ─────────────────────────────────────────────────────
+        if sparse_ranked:
+            merged_indices = _rrf_merge([dense_ranked, sparse_ranked], k=RRF_K)
+        else:
+            merged_indices = dense_ranked
+
+        # Take the top_k candidates after fusion
+        candidates = [str(self._metadata[i]) for i in merged_indices[:top_k]]
+
         return rerank(query, candidates)

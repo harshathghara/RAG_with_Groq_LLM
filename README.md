@@ -8,9 +8,12 @@ A **Retrieval-Augmented Generation (RAG)** pipeline that lets you ask natural la
 
 1. **Text Extraction** — Extracts and cleans text from PDFs using `PyMuPDF` (removes bullets, symbols, and empty lines).
 2. **Chunking** — Splits text into fixed-size overlapping character chunks (configurable via `.env`) to preserve context at chunk boundaries.
-3. **Embedding & Indexing** — Encodes chunks into dense vectors using `SentenceTransformers` and stores them in a `FAISS` index for fast cosine-similarity search.
-4. **Retrieval** — At query time, `FAISS` retrieves the top-N candidate chunks using L2-normalised inner product (cosine similarity).
-5. **Reranking** — A `CrossEncoder` (`cross-encoder/ms-marco-MiniLM-L-6-v2`) re-scores each candidate against the query and keeps the most relevant ones.
+3. **Embedding & Indexing** — Encodes chunks into dense vectors using `SentenceTransformers` and stores them in a `FAISS` index for fast cosine-similarity search. A `BM25Okapi` keyword index is built from the same chunks and pickled alongside the FAISS files.
+4. **Hybrid Retrieval** — At query time, two ranked lists are produced independently:
+   - **Dense** — FAISS cosine-similarity search over the vector index.
+   - **Sparse** — BM25 keyword scoring over the tokenised chunks.
+   The two lists are merged into one via **Reciprocal Rank Fusion (RRF)**, giving every chunk a combined score that rewards appearing highly in either list.
+5. **Reranking** — A `CrossEncoder` (`cross-encoder/ms-marco-MiniLM-L-6-v2`) re-scores the fused top-N candidates against the query and keeps the most relevant ones.
 6. **LLM Response** — The reranked chunks are passed as context to Groq's LLM, which generates a clear, structured answer.
 
 ---
@@ -41,15 +44,16 @@ RAG_with_Groq_LLM/
 ├── processed_text/               # Extracted plain text (auto-created)
 │   └── Test.txt
 │
-├── embeddings/                   # FAISS index and chunk metadata (auto-created)
+├── embeddings/                   # FAISS index, BM25 index, and chunk metadata (auto-created)
 │   ├── faiss_index_<name>
-│   └── faiss_index_metadata_<name>.npy
+│   ├── faiss_index_metadata_<name>.npy
+│   └── bm25_index_<name>.pkl
 │
 ├── src/
 │   ├── __init__.py               # Exposes public API for pipeline imports
 │   ├── extract_text.py           # PDF text extraction and cleaning
 │   ├── generate_embeddings.py    # Chunking, embedding, and FAISS indexing
-│   ├── retriever.py              # Retriever class (lazy-loading, FAISS + reranker)
+│   ├── retriever.py              # Retriever class (lazy-loading, hybrid FAISS+BM25 with RRF + reranker)
 │   ├── reranker.py               # CrossEncoder reranking
 │   ├── query_engine.py           # Interactive search CLI (no LLM)
 │   ├── llm_response.py           # ask_groq() — Groq LLM call
@@ -90,7 +94,7 @@ Then open [http://localhost:5000](http://localhost:5000) in your browser.
 - **Multi-PDF support** — upload as many PDFs as you want and switch between them instantly; each keeps its own index and chat context
 - **Streaming answers** — Groq responses stream token-by-token as they arrive, just like ChatGPT
 - **Retrieved context** — each answer has a collapsible "Retrieved context" section showing the exact chunks the LLM used
-- **Delete documents** — trash icon on each document removes it from the sidebar and deletes all associated files from disk (uploaded PDF, extracted text, FAISS index, metadata); if a document is still indexing when deleted, the background process is cancelled and any partial files are cleaned up automatically
+- **Delete documents** — trash icon on each document removes it from the sidebar and deletes all associated files from disk (uploaded PDF, extracted text, FAISS index, BM25 index, metadata); if a document is still indexing when deleted, the background process is cancelled and any partial files are cleaned up automatically
 
 ### Routes
 
@@ -166,6 +170,7 @@ CHUNK_OVERLAP=50
 RETRIEVAL_TOP_K=10
 RERANK_TOP_K=3
 RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2
+RRF_K=60
 ```
 
 ### 3. Extract text from your PDF
@@ -217,6 +222,7 @@ python src/evaluate.py
 | `RETRIEVAL_TOP_K` | `10` | Candidate chunks fetched from FAISS |
 | `RERANK_TOP_K` | `3` | Final chunks passed to LLM after reranking |
 | `RERANKER_MODEL` | `cross-encoder/ms-marco-MiniLM-L-6-v2` | CrossEncoder model for reranking |
+| `RRF_K` | `60` | Reciprocal Rank Fusion constant (higher = smoother score merging between BM25 and vector lists) |
 | `FAISS_INDEX_PATH` | `embeddings/faiss_index_Test` | Override path to FAISS index |
 | `FAISS_METADATA_PATH` | `embeddings/faiss_index_metadata_Test.npy` | Override path to metadata file |
 
