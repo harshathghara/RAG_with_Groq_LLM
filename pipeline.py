@@ -19,7 +19,7 @@ def run_pipeline(pdf_path: str) -> None:
     """
     Full RAG pipeline:
       1. Extract text from the PDF
-      2. Chunk, embed, and build a FAISS index
+      2. Chunk, embed, and build a FAISS + BM25 index
       3. Start an interactive Q&A loop powered by Groq
     """
 
@@ -29,7 +29,7 @@ def run_pipeline(pdf_path: str) -> None:
     text_file = extract_text_from_pdf(pdf_path, TEXT_OUTPUT_DIR)
 
     # ── Step 2: Embed ─────────────────────────────────────────────────────────
-    print("\n[2/3] Generating embeddings and building FAISS index...")
+    print("\n[2/3] Generating embeddings and building FAISS + BM25 indices...")
     index_path, metadata_path, bm25_path = generate_embeddings(text_file, INDEX_OUTPUT_DIR)
 
     # ── Step 3: Query loop ────────────────────────────────────────────────────
@@ -49,7 +49,7 @@ def run_pipeline(pdf_path: str) -> None:
             print("Goodbye!")
             break
 
-        # Retrieve relevant chunks (FAISS + reranker)
+        # Retrieve relevant chunks (BM25 + FAISS hybrid, RRF merge, then reranker)
         chunks = retriever.search(query)
         context = "\n".join(chunks)
 
