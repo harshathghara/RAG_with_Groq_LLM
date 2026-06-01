@@ -70,12 +70,16 @@ class Retriever:
             with open(self._bm25_path, "rb") as f:
                 self._bm25 = pickle.load(f)
 
-    def search(self, query: str, top_k: int = RETRIEVAL_TOP_K) -> list[str]:
+    def search(self, query: str, top_k: int = RETRIEVAL_TOP_K) -> list[dict]:
         """
         Hybrid search: FAISS vector search + BM25 keyword search, merged
         via Reciprocal Rank Fusion, then reranked with CrossEncoder.
 
-        Returns a list of text chunks ordered by relevance (best first).
+        Each returned dict has:
+          text       – the chunk text
+          page       – 1-based page number (None if index predates page tracking)
+          chunk_idx  – position of the chunk within the document
+          score      – raw CrossEncoder logit (sigmoid → confidence %)
         """
         self._load()
 
@@ -94,12 +98,29 @@ class Retriever:
             sparse_ranked = []
 
         # ── Merge via RRF ─────────────────────────────────────────────────────
-        if sparse_ranked:
-            merged_indices = _rrf_merge([dense_ranked, sparse_ranked], k=RRF_K)
-        else:
-            merged_indices = dense_ranked
+        merged_indices = (
+            _rrf_merge([dense_ranked, sparse_ranked], k=RRF_K)
+            if sparse_ranked else dense_ranked
+        )
 
-        # Take the top_k candidates after fusion
-        candidates = [str(self._metadata[i]) for i in merged_indices[:top_k]]
+        # ── Build candidate list (handle old plain-string and new dict metadata) ──
+        raw_candidates: list[dict] = []
+        for i in merged_indices[:top_k]:
+            item = self._metadata[i]
+            if isinstance(item, dict):
+                raw_candidates.append(item)
+            else:
+                # Backward compat: index built before page tracking was added
+                raw_candidates.append({"text": str(item), "page": None, "chunk_idx": int(i)})
 
-        return rerank(query, candidates)
+        candidate_texts = [c["text"] for c in raw_candidates]
+        text_to_meta    = {c["text"]: c for c in raw_candidates}
+
+        # ── CrossEncoder reranking ────────────────────────────────────────────
+        reranked = rerank(query, candidate_texts)   # [(text, score), ...]
+
+        results: list[dict] = []
+        for text, score in reranked:
+            meta = text_to_meta.get(text, {"text": text, "page": None, "chunk_idx": None})
+            results.append({**meta, "score": score})
+        return results

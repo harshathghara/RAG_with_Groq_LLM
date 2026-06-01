@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 
 sys.path.insert(0, os.path.dirname(__file__))
-from src import extract_text_from_pdf, generate_embeddings, Retriever
+from src import extract_text_from_pdf, generate_embeddings, Retriever, suggest_followups
 
 load_dotenv()
 
@@ -111,6 +111,16 @@ async def upload(pdf: UploadFile = File(...)):
     with open(pdf_path, "wb") as f:
         f.write(contents)
 
+    # Get page count without blocking (fitz is already a dependency)
+    page_count: int | None = None
+    try:
+        import fitz as _fitz
+        _doc = _fitz.open(pdf_path)
+        page_count = _doc.page_count
+        _doc.close()
+    except Exception:
+        pass
+
     cancel = threading.Event()
     with docs_lock:
         docs[doc_id] = {
@@ -118,13 +128,14 @@ async def upload(pdf: UploadFile = File(...)):
             "status":   "pending",
             "pdf_path": pdf_path,
             "cancel":   cancel,
+            "pages":    page_count,
         }
 
     # CPU-heavy work runs in a daemon thread so the event loop stays free
     t = threading.Thread(target=_process_pdf, args=(doc_id, pdf_path, cancel), daemon=True)
     t.start()
 
-    return {"doc_id": doc_id, "name": pdf.filename}
+    return {"doc_id": doc_id, "name": pdf.filename, "pages": page_count}
 
 
 @app.get("/status/{doc_id}")
@@ -144,7 +155,7 @@ async def documents():
     with docs_lock:
         snapshot = list(docs.items())
     return [
-        {"id": k, "name": v["name"], "status": v["status"]}
+        {"id": k, "name": v["name"], "status": v["status"], "pages": v.get("pages")}
         for k, v in snapshot
     ]
 
@@ -174,6 +185,7 @@ async def delete_document(doc_id: str):
     )
 
     return {"deleted": doc_id}
+
 
 
 class QueryRequest(BaseModel):
@@ -211,10 +223,11 @@ async def query(body: QueryRequest):
         import groq as groq_module
 
         # Retrieval is sync + CPU-bound — run in thread pool
-        chunks  = await asyncio.to_thread(retriever.search, question)
-        context = "\n\n".join(chunks)
+        # Returns list[dict] with keys: text, page, chunk_idx, score
+        chunk_metas = await asyncio.to_thread(retriever.search, question)
+        context     = "\n\n".join(c["text"] for c in chunk_metas)
 
-        yield f"data: {json.dumps({'type': 'context', 'text': context})}\n\n"
+        yield f"data: {json.dumps({'type': 'context', 'chunks': chunk_metas, 'text': context})}\n\n"
 
         # Groq SDK is synchronous; pipe tokens to the async generator via a Queue.
         # The groq_worker thread puts tokens into the queue; we await them here.
@@ -244,6 +257,7 @@ async def query(body: QueryRequest):
 
         threading.Thread(target=groq_worker, daemon=True).start()
 
+        answer_parts: list[str] = []
         while True:
             token = await q.get()
             if token is None:
@@ -251,9 +265,17 @@ async def query(body: QueryRequest):
             if isinstance(token, Exception):
                 yield f"data: {json.dumps({'type': 'error', 'text': str(token)})}\n\n"
                 break
+            answer_parts.append(token)
             yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
 
         yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+        # Generate follow-up questions after the answer is complete
+        full_answer = "".join(answer_parts)
+        if full_answer:
+            followups = await asyncio.to_thread(suggest_followups, question, full_answer, context)
+            if followups:
+                yield f"data: {json.dumps({'type': 'followups', 'questions': followups})}\n\n"
 
     return StreamingResponse(
         event_generator(),

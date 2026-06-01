@@ -13,10 +13,10 @@ def extract_text_from_pdf(pdf_path, output_folder):
     doc = fitz.open(pdf_path)
     text = ""
 
-    for page in doc:
+    for page_num, page in enumerate(doc, start=1):
         raw_text = page.get_text("text")
         cleaned_text = clean_text(raw_text)
-        text += cleaned_text + "\n"
+        text += f"\n<<<PAGE:{page_num}>>>\n{cleaned_text}\n"
 
     # Save extracted text
     output_file = os.path.join(output_folder, os.path.basename(pdf_path).replace(".pdf", ".txt"))

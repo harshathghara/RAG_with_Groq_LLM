@@ -107,12 +107,19 @@ def _rrf_merge(ranked_lists: list[list[int]], k: int = 60) -> list[int]:
     return sorted(scores, key=lambda i: scores[i], reverse=True)
 
 
+def _chunk_text(item) -> str:
+    """Extract plain text from a metadata item (dict or legacy string)."""
+    if isinstance(item, dict):
+        return item.get("text", "")
+    return str(item)
+
+
 def faiss_only(query: str, top_k: int = RERANK_TOP_K) -> list[str]:
     """Return top_k chunks by FAISS cosine similarity, no reranking."""
     embedding = model.encode([query], convert_to_numpy=True)
     faiss.normalize_L2(embedding)
     _, indices = index.search(embedding, top_k)
-    return [metadata[i] for i in indices[0]]
+    return [_chunk_text(metadata[i]) for i in indices[0]]
 
 
 def faiss_plus_rerank(query: str, candidate_k: int = RETRIEVAL_TOP_K) -> list[str]:
@@ -120,26 +127,24 @@ def faiss_plus_rerank(query: str, candidate_k: int = RETRIEVAL_TOP_K) -> list[st
     embedding = model.encode([query], convert_to_numpy=True)
     faiss.normalize_L2(embedding)
     _, indices = index.search(embedding, candidate_k)
-    candidates = [metadata[i] for i in indices[0]]
-    return rerank(query, candidates)
+    candidates = [_chunk_text(metadata[i]) for i in indices[0]]
+    # rerank() now returns (text, score) tuples — extract just the text
+    return [text for text, _ in rerank(query, candidates)]
 
 
 def hybrid_plus_rerank(query: str, candidate_k: int = RETRIEVAL_TOP_K) -> list[str] | None:
     """BM25 + FAISS ranked lists merged with RRF, then reranked."""
     if bm25 is None:
         return None
-    # Dense
     embedding = model.encode([query], convert_to_numpy=True)
     faiss.normalize_L2(embedding)
     _, faiss_indices = index.search(embedding, candidate_k)
-    dense_ranked = [int(i) for i in faiss_indices[0] if i >= 0]
-    # Sparse
+    dense_ranked  = [int(i) for i in faiss_indices[0] if i >= 0]
     bm25_scores   = bm25.get_scores(query.lower().split())
     sparse_ranked = list(np.argsort(bm25_scores)[::-1][:candidate_k])
-    # Merge
-    merged = _rrf_merge([dense_ranked, sparse_ranked], k=RRF_K)
-    candidates = [str(metadata[i]) for i in merged[:candidate_k]]
-    return rerank(query, candidates)
+    merged     = _rrf_merge([dense_ranked, sparse_ranked], k=RRF_K)
+    candidates = [_chunk_text(metadata[i]) for i in merged[:candidate_k]]
+    return [text for text, _ in rerank(query, candidates)]
 
 
 def hit(chunks: list[str], keyword: str) -> bool:

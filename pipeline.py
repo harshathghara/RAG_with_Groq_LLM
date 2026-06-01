@@ -50,11 +50,15 @@ def run_pipeline(pdf_path: str) -> None:
             break
 
         # Retrieve relevant chunks (BM25 + FAISS hybrid, RRF merge, then reranker)
-        chunks = retriever.search(query)
-        context = "\n".join(chunks)
+        # Returns list[dict]: text, page, chunk_idx, score
+        chunk_metas = retriever.search(query)
+        context     = "\n".join(c["text"] for c in chunk_metas)
 
         print("\nRetrieved Context:")
-        print(context)
+        for i, c in enumerate(chunk_metas, 1):
+            page_lbl  = f"p.{c['page']}" if c.get("page") else "p.?"
+            score_pct = 100 / (1 + __import__("math").exp(-c["score"]))
+            print(f"  [{i}] {page_lbl} | {score_pct:.1f}% | {c['text'][:120].strip()}...")
 
         # Generate answer with Groq
         print("\nGroq AI Response:")
